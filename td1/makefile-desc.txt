@@ -1,0 +1,17 @@
+à quoi sert la ligne .SUFFIXES ?:
+supprime les suffixe par défaut
+
+à quoi sert la ligne .PHONY ?
+indique les buts qui ne sont pas des fichier
+
+à quoi sert la ligne $(BIN)%: $(OBJ)%.o $O ?
+un executable s'obtient a partir du .o dans le repertoire OBJ
+
+à quoi sert la ligne $(OBJ)%.o: $(SRC)%.c $(HC) ?
+un fichier .o s'obtient a partir du fichier .c dans le repertoire SRC
+
+à quoi sert le signe "-" au début de certaines lignes ?
+ignorer les erreurs
+
+à quoi sert le doublement du signe "$" à certains endroits ?
+récupérer une variable d'environnement 
