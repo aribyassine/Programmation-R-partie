@@ -6,6 +6,7 @@
 CC =gcc
 LDFLAGS = -lpthread
 CFLAGS =-W -Wall -ansi -pedantic -Iinclude -std=c99
+
 DIR=.
 BIN=$(DIR)/bin/
 OBJ=$(DIR)/obj/
@@ -39,7 +40,7 @@ clean:
 
 $(BIN)%: $(OBJ)%.o $O
 	@if [ -d $(BIN) ]; then : ; else mkdir $(BIN); fi
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(OBJ)%.o: $(SRC)%.c $(HC)
 	@if [ -d $(OBJ) ]; then : ; else mkdir $(OBJ); fi
