@@ -1,5 +1,5 @@
 #define PRODUCTEUR                                                             \
-  int c;                                                                       \
+  char c;                                                                      \
   while ((c = getchar()) != EOF) {                                             \
     push(c);                                                                   \
   }

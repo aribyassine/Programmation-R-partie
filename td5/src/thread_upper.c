@@ -19,6 +19,7 @@ int main(int argc, char *argv[]) {
   int i, status[nb_threads];
 
   for (i = 0; i < nb_threads; i++) {
+
     if (pthread_create(&(tid[i]), NULL, func_thread, (void *)argv[i + 1]) !=
         0) {
       perror("pthread_create");
