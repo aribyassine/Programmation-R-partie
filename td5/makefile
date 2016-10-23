@@ -5,7 +5,7 @@
 # Documentation: http://www.gnu.org/software/make/manual/make.html
 CC =gcc
 LDFLAGS = -lpthread
-CFLAGS =-W -Wall -ansi -pedantic -Iinclude
+CFLAGS =-W -Wall -ansi -pedantic -Iinclude -std=c99
 
 DIR=.
 BIN=$(DIR)/bin/
