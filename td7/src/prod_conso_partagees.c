@@ -120,8 +120,8 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  create_n_process(nb_cons, CONS);
   create_n_process(nb_prod, PROD);
+  create_n_process(nb_cons, CONS);
 
   /* “detacher” le segment */
   munmap(shm, sizeof(struct myshm));
