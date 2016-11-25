@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
 sem_t *semaphore;
 sem_t *barrier;
+
 void wait_barrier(int NB_PCS) {
   if (!sem_trywait(semaphore))
     sem_wait(barrier);
@@ -35,8 +37,6 @@ void child_process(int NB_PCS) {
   printf("avant barrière\n");
   wait_barrier(NB_PCS);
   printf("après barrière\n");
-  /* Fermer le semaphore */
-  sem_close(semaphore);
   exit(0);
 }
 
@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
   }
 
   int nb_proc = atoi(argv[1]);
-  /*creation d’un semaphore mutex initialisé à 0 */
+  /*creation d’un semaphore initialisé à 0 */
   if ((barrier = sem_open("/barrier", O_CREAT | O_EXCL | O_RDWR, 0666, 0)) ==
       SEM_FAILED) {
     if (errno != EEXIST) {
@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
   }
-  /*creation d’un semaphore mutex initialisé à n-1 */
+  /*creation d’un semaphore initialisé à n-1 */
   if ((semaphore = sem_open("/monsem", O_CREAT | O_EXCL | O_RDWR, 0666,
                             nb_proc - 1)) == SEM_FAILED) {
     if (errno != EEXIST) {
