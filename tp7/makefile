@@ -1,9 +1,9 @@
 #			Programmation Repartie (4I400)
-#		Makefile pour TD 7. Introduction aux sémaphores
+#		Makefile pour TM 7. Une messagerie instantanée en mémoire partagée
 
 
 # Documentation: http://www.gnu.org/software/make/manual/make.html
-CC =clang
+CC =gcc
 LDFLAGS = -lpthread -lrt
 CFLAGS =-W -Wall -ansi -pedantic -Iinclude -std=c99
 
@@ -14,22 +14,19 @@ INCLUDE=$(DIR)/include/
 LIB=$(DIR)/lib/
 SRC=$(DIR)/src/
 
-HC=include/producteur_consommateur.h
+HC=include/chat_common.h
 
 .SUFFIXES:
-.PHONY: all clean test test-posix_barrier test-prod_conso_partagees test-sem_affiche
-all: $(BIN)posix_barrier  $(BIN)prod_conso_partagees $(BIN)sem_affiche
+.PHONY: all clean test test-chat_server test-chat_client
+all: $(BIN)chat_server $(BIN)chat_client
 
-test: test-posix_barrier test-prod_conso_partagees test-sem_affiche
+test: test-chat_server test-chat_client
 
-test-posix_barrier: $(BIN)posix_barrier
-	-bin/posix_barrier 4
+test-chat_server: $(BIN)chat_server
+	-bin/chat_server semserver &
 
-test-prod_conso_partagees: $(BIN)prod_conso_partagees
-	-echo "123456789" | bin/prod_conso_partagees 5 3
-
-test-sem_affiche: $(BIN)sem_affiche
-	-$$PWD/bin/sem_affiche 7
+test-chat_client: $(BIN)chat_client
+	-bin/chat_client semclient semserver
 
 
 $(BIN)%: $(OBJ)%.o

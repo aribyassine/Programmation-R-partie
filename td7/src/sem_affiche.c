@@ -15,8 +15,8 @@ sem_t *shm;
 
 /* La fonction create_process duplique le processus appelant et retourne
          le PID du processus fils ainsi créé */
+pid_t pid;
 pid_t create_process() {
-  pid_t pid;
   do {
     pid = fork();
   } while ((pid == -1) && (errno == EAGAIN));

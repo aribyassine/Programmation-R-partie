@@ -17,13 +17,13 @@
 struct myshm {
   sem_t sem;
   sem_t mutex;
-  char *buf[buf_size];
+  char buf[buf_size];
   int stack_size;
 };
 
 struct myshm *shm;
 
-push(char c) {
+void push(char c) {
   sem_wait(&(shm->mutex));
   shm->buf[shm->stack_size] = c;
   shm->stack_size++;
@@ -72,7 +72,7 @@ int *create_n_process(int nb_proc, int type) {
     switch (pid) {
     case -1:
       perror("fork");
-      return EXIT_FAILURE;
+      exit(EXIT_FAILURE);
       break;
     /* Si on est dans le fils */
     case 0:
