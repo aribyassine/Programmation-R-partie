@@ -3,7 +3,7 @@
 
 
 # Documentation: http://www.gnu.org/software/make/manual/make.html
-CC =gcc
+CC =clang
 LDFLAGS = -lpthread -lrt
 CFLAGS =-W -Wall -ansi -pedantic -Iinclude -std=c99
 

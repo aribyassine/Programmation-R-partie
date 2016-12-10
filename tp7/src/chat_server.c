@@ -13,7 +13,7 @@ void connexion(char *id_client) {
         perror("shm_open connexion");
         exit(1);
     }
-    if ((clients_seg[cpt_client] = (char *)mmap(NULL, sizeof(char) * TAILLE_MESS, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0) == MAP_FAILED)) {
+    if ((clients_seg[cpt_client] = mmap(NULL, sizeof(char) * TAILLE_MESS, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0) == MAP_FAILED)) {
         perror("mmap");
         exit(EXIT_FAILURE);
     }
@@ -29,7 +29,7 @@ void diffusion(char *client_msg) {
 }
 void deconnexion(char *id_client) {
     printf("> deconnexion : %s\n", id_client);
-    int i, y, n = id_client;
+    int i, y, n = cpt_client;
     for (i = 0; i < n; i++) {
         if (strcmp(clients_ids[i], id_client) == 0) {
             for (y = i; y < n; y++) {
@@ -48,7 +48,6 @@ int main(int argc, char const *argv[]) {
     }
     char const *serveur_name = argv[1];
     int fd;
-    int shm;
     /* Créé le segment en lecture écriture */
     if ((fd = shm_open(serveur_name, O_RDWR | O_CREAT, 0666)) == -1) {
         perror("shm_open serveur");
