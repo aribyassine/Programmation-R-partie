@@ -35,6 +35,13 @@ int file_exist(const char *filepath) {
     struct stat info;
     return (stat(filepath, &info) == 0);
 }
+/*-------------------------------------------------------*
+        return the file size.
+  -------------------------------------------------------*/
+int file_size(const char *filepath) {
+    struct stat info;
+    return (stat(filepath, &info) == 0) ? info.st_size : 0;
+}
 
 char *contains(char *start, char *end, char target) {
     char *p = NULL;

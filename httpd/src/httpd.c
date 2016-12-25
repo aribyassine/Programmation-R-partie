@@ -38,11 +38,6 @@
 #include "mime.h"
 #include "util.h"
 
-// Client socket FD
-int client_sock = -1;
-
-// Server socket FD
-int server_sock = -1;
 /**
  * Test whether given character is space.
  *
@@ -55,6 +50,8 @@ int server_sock = -1;
 // `Server` header line
 #define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
 
+pthread_mutex_t httpd_mtx = PTHREAD_MUTEX_INITIALIZER;
+
 // Declare functions
 void *accept_request(void *);
 void bad_request(int);
@@ -65,7 +62,7 @@ void execute_cgi(int, const char *, const char *, const char *);
 int get_line(int, char *, int);
 void headers(int, const char *);
 void not_found(int);
-void serve_file(int, const char *);
+void serve_file(int, const char *, log_struct *);
 int startup(unsigned short *);
 void unimplemented(int);
 
@@ -74,8 +71,14 @@ void unimplemented(int);
  * return.  Process the request appropriately.
  * Parameters: the socket connected to the client */
 /**********************************************************************/
-void *accept_request(void *client_sock_fd) {
-    int client = *(int *)client_sock_fd;
+void *accept_request(void *parameters) {
+
+    log_struct logs = *(log_struct *)parameters;
+    logs.file_size = 0;
+
+    // client socket file descriptor
+    int client = logs.client_sock;
+
     // Input buffer
     char buf[1024];
 
@@ -107,6 +110,11 @@ void *accept_request(void *client_sock_fd) {
     // Read the HTTP start line into the input buffer.
     // Get the number of bytes read.
     numchars = get_line(client, buf, sizeof(buf));
+
+    // logging first_line
+    strcpy(logs.first_line, buf);
+    // removing \n
+    logs.first_line[strlen(logs.first_line) - 1] = 0;
 
     // Buffer indexes
     i = 0;
@@ -221,6 +229,8 @@ void *accept_request(void *client_sock_fd) {
 
         // Send 404 response
         not_found(client);
+        // logging 404 code
+        logs.http_code = 404;
     }
 
     // If the path exists
@@ -238,7 +248,7 @@ void *accept_request(void *client_sock_fd) {
         // If the CGI mode is not true
         if (!cgi)
             // Serve file on the path
-            serve_file(client, path);
+            serve_file(client, path, &logs);
 
         // If the CGI mode is true
         else
@@ -246,12 +256,66 @@ void *accept_request(void *client_sock_fd) {
             execute_cgi(client, path, method, query_string);
     }
 
-    logging(url);
-    logging("\n");
-
     // Close the request socket
     close(client);
+
+    // put le log structure in a file
+    pthread_mutex_lock(&httpd_mtx);
+    logging(logs);
+    pthread_mutex_unlock(&httpd_mtx);
     return NULL;
+}
+
+/**********************************************************************/
+/* Send a regular file to the client.  Use headers, and report
+ * errors to client if they occur.
+ * Parameters: a pointer to a file structure produced from the socket
+ *              file descriptor
+ *             the name of the file to serve
+ * Returns: the of file sended*/
+/**********************************************************************/
+void serve_file(int client, const char *filename, log_struct *logs) {
+    // File pointer
+    FILE *resource = NULL;
+
+    // Number of bytes read
+    int numchars = 1;
+
+    // Buffer
+    char buf[1024];
+
+    // Set the buffer's initial value be "A\0"
+    buf[0] = 'A';
+    buf[1] = '\0';
+
+    // While the last read is successful,
+    // and the buffer's first byte is not `\n`,
+    // it means the input data's headers part is not run out.
+    while ((numchars > 0) && strcmp("\n", buf)) /* read & discard headers */
+        // Read one header line
+        numchars = get_line(client, buf, sizeof(buf));
+    // Open the file
+    resource = fopen(filename, "r");
+
+    // If opening file is not successful
+    if (resource == NULL) {
+        // Send 404 response
+        not_found(client);
+        logs->http_code = 404;
+    }
+    // If opening file is successful
+    else {
+        // Send headers
+        headers(client, filename);
+
+        // Send file data
+        cat(client, resource);
+        logs->http_code = 200;
+        logs->file_size = file_size(filename);
+    }
+
+    // Close the file
+    fclose(resource);
 }
 
 /**********************************************************************/
@@ -263,7 +327,7 @@ void bad_request(int client) {
     char buf[1024];
 
     // Add HTTP start line to the buffer
-    sprintf(buf, "HTTP/1.0 400 BAD REQUEST\r\n");
+    sprintf(buf, "HTTP/1.1 400 BAD REQUEST\r\n");
 
     // Send
     send(client, buf, sizeof(buf), 0);
@@ -326,7 +390,7 @@ void cannot_execute(int client) {
     char buf[1024];
 
     // Add HTTP start line to the buffer
-    sprintf(buf, "HTTP/1.0 500 Internal Server Error\r\n");
+    sprintf(buf, "HTTP/1.1 500 Internal Server Error\r\n");
 
     // Send
     send(client, buf, strlen(buf), 0);
@@ -358,10 +422,6 @@ void cannot_execute(int client) {
 void error_die(const char *sc) {
     // Print message
     perror(sc);
-    shutdown(client_sock, 2);
-    shutdown(server_sock, 2);
-    close(client_sock);
-    close(server_sock);
     // Exit with error code
     exit(1);
 }
@@ -449,7 +509,7 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
     }
 
     // Add HTTP start line to the buffer
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "HTTP/1.1 200 OK\r\n");
 
     // Send
     send(client, buf, strlen(buf), 0);
@@ -506,10 +566,10 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         char length_env[255];
 
         // Set stdout be the output pipe's write end
-        dup2(cgi_output[1], 1);
+        dup2(cgi_output[1], STDOUT_FILENO);
 
         // Set stdin be the input pipe's read end
-        dup2(cgi_input[0], 0);
+        dup2(cgi_input[0], STDIN_FILENO);
 
         // Close the output pipe's read end because the output pipe is for the child
         // process to send data to the parent process
@@ -712,7 +772,7 @@ void not_found(int client) {
     char buf[1024];
 
     // Add HTTP start line to the buffer
-    sprintf(buf, "HTTP/1.0 404 NOT FOUND\r\n");
+    sprintf(buf, "HTTP/1.1 404 NOT FOUND\r\n");
 
     // Send
     send(client, buf, strlen(buf), 0);
@@ -764,54 +824,6 @@ void not_found(int client) {
 
     // Send
     send(client, buf, strlen(buf), 0);
-}
-
-/**********************************************************************/
-/* Send a regular file to the client.  Use headers, and report
- * errors to client if they occur.
- * Parameters: a pointer to a file structure produced from the socket
- *              file descriptor
- *             the name of the file to serve */
-/**********************************************************************/
-void serve_file(int client, const char *filename) {
-    // File pointer
-    FILE *resource = NULL;
-
-    // Number of bytes read
-    int numchars = 1;
-
-    // Buffer
-    char buf[1024];
-
-    // Set the buffer's initial value be "A\0"
-    buf[0] = 'A';
-    buf[1] = '\0';
-
-    // While the last read is successful,
-    // and the buffer's first byte is not `\n`,
-    // it means the input data's headers part is not run out.
-    while ((numchars > 0) && strcmp("\n", buf)) /* read & discard headers */
-        // Read one header line
-        numchars = get_line(client, buf, sizeof(buf));
-    // Open the file
-    resource = fopen(filename, "r");
-
-    // If opening file is not successful
-    if (resource == NULL)
-        // Send 404 response
-        not_found(client);
-
-    // If opening file is successful
-    else {
-        // Send headers
-        headers(client, filename);
-
-        // Send file data
-        cat(client, resource);
-    }
-
-    // Close the file
-    fclose(resource);
 }
 
 /**********************************************************************/
@@ -902,7 +914,7 @@ void unimplemented(int client) {
     char buf[1024];
 
     // Add HTTP start line to the buffer
-    sprintf(buf, "HTTP/1.0 501 Method Not Implemented\r\n");
+    sprintf(buf, "HTTP/1.1 501 Method Not Implemented\r\n");
 
     // Send
     send(client, buf, strlen(buf), 0);
@@ -950,13 +962,6 @@ void unimplemented(int client) {
     send(client, buf, strlen(buf), 0);
 }
 
-void sig_handler(int signo) {
-    if (signo == SIGINT) {
-        close(client_sock);
-        close(server_sock);
-    }
-}
-
 /**********************************************************************/
 
 /**
@@ -965,7 +970,7 @@ void sig_handler(int signo) {
 int main(void) {
 
     // Port number. 0 means use random port.
-    unsigned short port = 80;
+    unsigned short port = 8080;
 
     // Client address structure
     struct sockaddr_in client_name;
@@ -976,29 +981,39 @@ int main(void) {
     // Thread pointer
     pthread_t newthread;
 
+    // Server socket FD
+    int server_sock;
+
+    // Serveur PID
+    int server_pid = getpid();
+
     // Create server socket
     server_sock = startup(&port);
 
     // Print message
     printf("httpd running on port %d\n", port);
 
-    if (signal(SIGINT, sig_handler) == SIG_ERR)
-        printf("\ncan't catch SIGINT\n");
-
     // Loop forever
     while (1) {
-        // Accept a request
-        client_sock = accept(server_sock, (struct sockaddr *)&client_name, &client_name_len);
+        // thread Parameter
+        struct log_struct logs;
 
-        // logging ip and time
-        logging(inet_ntoa(client_name.sin_addr));
+        // Accept a request
+        logs.client_sock = accept(server_sock, (struct sockaddr *)&client_name, &client_name_len);
+
+        // logging ip
+        strcpy(logs.ip, inet_ntoa(client_name.sin_addr));
+
+        // logging date
         time_t t1 = time(NULL);
         struct tm tm = *localtime(&t1);
-        char t[50];
-        sprintf(t, "%d-%d-%d %d:%d:%d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-        logging(t);
+        sprintf(logs.date, "%d-%d-%d %d:%d:%d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+        // logging serveur pid
+        logs.serveur_pid = server_pid;
+
         // If have error
-        if (client_sock == -1)
+        if (logs.client_sock == -1)
             // Raise error
             error_die("accept");
 
@@ -1007,9 +1022,11 @@ int main(void) {
         // Create thread.
         // Process the request
         // If have error.
-        if (pthread_create(&newthread, NULL, accept_request, &client_sock) != 0)
+        if (pthread_create(&newthread, NULL, accept_request, &logs) != 0)
             // Raise error
             perror("pthread_create");
+
+        logs.thread_id = (int)newthread;
     }
     // Close the server socket
     close(server_sock);
