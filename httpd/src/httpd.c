@@ -58,7 +58,7 @@ void bad_request(int);
 void cat(int, FILE *);
 void cannot_execute(int);
 void error_die(const char *);
-void execute_cgi(int, const char *, const char *, const char *);
+void execute_cgi(int, const char *, const char *, const char *, log_struct *);
 int get_line(int, char *, int);
 void headers(int, const char *);
 void not_found(int);
@@ -253,7 +253,7 @@ void *accept_request(void *parameters) {
         // If the CGI mode is true
         else
             // Execute program file on the path
-            execute_cgi(client, path, method, query_string);
+            execute_cgi(client, path, method, query_string, &logs);
     }
 
     // Close the request socket
@@ -432,7 +432,7 @@ void error_die(const char *sc) {
  * Parameters: client socket descriptor
  *             path to the CGI script */
 /**********************************************************************/
-void execute_cgi(int client, const char *path, const char *method, const char *query_string) {
+void execute_cgi(int client, const char *path, const char *method, const char *query_string, log_struct *logs) {
     // Buffer
     char buf[1024];
 
@@ -455,6 +455,9 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
 
     // Byte read
     char c;
+
+    // la taille de la réponse
+    int number_of_bytes_sent = 0;
 
     // Number of bytes read
     int numchars = 1;
@@ -607,8 +610,8 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         // Run the CGI program in the current process
         execl(path, path, NULL);
 
-        // Exit without error
-        exit(0);
+        // if execl() was successful, this won't be reached
+        exit(500);
 
         // If this is the parent process
     } else { /* parent */
@@ -635,9 +638,11 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         //
         // If the read is successful.
         //     Enter loop body.
-        while (read(cgi_output[0], &c, 1) > 0)
+        while (read(cgi_output[0], &c, 1) > 0) {
             // Send the byte to client
             send(client, &c, 1, 0);
+            number_of_bytes_sent++;
+        }
 
         // Close the output pipe's read end
         close(cgi_output[0]);
@@ -645,8 +650,40 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         // Close the input pipe's write end
         close(cgi_input[1]);
 
-        // Wait the child process to finish
-        waitpid(pid, &status, 0);
+        // the parent process calls waitpid() on the child
+        if (waitpid(pid, &status, 0) > 0) {
+            if (WIFEXITED(status) && !WEXITSTATUS(status)) {
+                // the program terminated normally and executed successfully
+                logs->http_code = 200;
+                logs->file_size = number_of_bytes_sent;
+            } else if (WIFEXITED(status) && WEXITSTATUS(status)) {
+                if (WEXITSTATUS(status) == 500) {
+                    // execl() failed
+                    // Send 500 response and log
+                    cannot_execute(client);
+                    logs->http_code = 500;
+                    logs->file_size = number_of_bytes_sent;
+                } else {
+                    // the program terminated normally, but returned a non-zero status
+                    // Send 500 response and log
+                    cannot_execute(client);
+                    logs->http_code = 500;
+                    logs->file_size = number_of_bytes_sent;
+                }
+            } else {
+                // the program didn't terminate normally
+                // Send 500 response and log
+                cannot_execute(client);
+                logs->http_code = 500;
+                logs->file_size = number_of_bytes_sent;
+            }
+        } else {
+            // waitpid() failed
+            // Send 500 response and log
+            cannot_execute(client);
+            logs->http_code = 500;
+            logs->file_size = number_of_bytes_sent;
+        }
     }
 }
 
