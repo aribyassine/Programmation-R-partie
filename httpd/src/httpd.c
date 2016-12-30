@@ -1,21 +1,8 @@
-/* J. David's webserver */
-/* This is a simple webserver.
- * Created November 1999 by J. David Blackstone.
- * CSE 4344 (Network concepts), Prof. Zeigler
- * University of Texas at Arlington
+/* ARIB Yassine 3525057 Un serveur HTTP
+ * 4I400 PR (Programmation Répartie)
+ * Université Pierre-et-Marie-Curie
  */
-/* This program compiles for Sparc Solaris 2.6.
- * To compile for Linux:
- *  1) Comment out the #include <pthread.h> line.
- *  2) Comment out the line that defines the variable newthread.
- *  3) Comment out the two lines that run pthread_create().
- *  4) Uncomment the line that runs accept_request().
- *  5) Remove -lsocket from the Makefile.
- *      I am determined that I will eventually use GNU autoconf to
- *      handle all this junk for you!  (I'll also handle threading
- *      correctly; it seems even pthread isn't the same between Linux
- *      and Solaris.)
- */
+
 #define _XOPEN_SOURCE 700
 #define _REENTRANT
 #include <arpa/inet.h>
@@ -39,7 +26,7 @@
 #include "util.h"
 
 /**
- * Test whether given character is space.
+ * Teste si le char passé en paramètre est un espace.
  *
  * @param {char} x - Character.
  *
@@ -47,12 +34,12 @@
  */
 #define ISspace(x) isspace((int)(x))
 
-// `Server` header line
+// Ligne "Server" pour les headers
 #define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
 
 pthread_mutex_t httpd_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-// Declare functions
+// Déclaration des fonctions 
 void *accept_request(void *);
 void bad_request(int);
 void cat(int, FILE *);
@@ -67,9 +54,10 @@ int startup(unsigned short *);
 void unimplemented(int);
 
 /**********************************************************************/
-/* A request has caused a call to accept() on the server port to
- * return.  Process the request appropriately.
- * Parameters: the socket connected to the client */
+/* Fonction lancée par un thread à chaque fois qu’un client
+ * se présente et traite la requête du client 
+ * Parameters: une structure servant à la journalisation 
+ * et contenant le socket client */
 /**********************************************************************/
 void *accept_request(void *parameters) {
 
@@ -100,101 +88,86 @@ void *accept_request(void *parameters) {
     // File status structure
     struct stat st;
 
-    // Whether is CGI mode
-    int cgi = 0; /* becomes true if server decides this is a CGI
-                  * program */
+    // boolean indiquant si la requête concerne un fichier exécutable 
+    int cgi = 0; 
 
     // Query string pointer
     char *query_string = NULL;
 
-    // Read the HTTP start line into the input buffer.
-    // Get the number of bytes read.
+    // Lis la première ligne de la requête HTTP 
     numchars = get_line(client, buf, sizeof(buf));
 
-    // logging first_line
+    // Journalisation de la première ligne
     strcpy(logs.first_line, buf);
-    // removing \n
+    // suppression de caractère de fin de ligne "\n"
     logs.first_line[strlen(logs.first_line) - 1] = 0;
 
     // Buffer indexes
     i = 0;
     j = 0;
 
-    // For the input buffer's each byte.
-    //     If the byte is not space,
-    //     and the method name buffer is not full.
-    //         Enter loop body.
+    // On récupère le premier mot de la requête 
     while (!ISspace(buf[j]) && (i < sizeof(method) - 1)) {
-        // Copy the byte to the method name buffer
+        // Copie du mot dans le buffer "method"
         method[i] = buf[j];
 
-        // Incremnt buffer indexes
+        // Incrémente les indexes 
         i++;
         j++;
     }
 
-    // Add nul to string end
+    // ajout du caractère de fin de chaine
     method[i] = '\0';
 
-    // If the method name is not `GET`,
-    // and the method name is not `POST`.
+    // Si la method n’est ni "POST" ni "GET"
     if (strcasecmp(method, "GET") && strcasecmp(method, "POST")) {
         // Send 501 response
         unimplemented(client);
-
+        logs->http_code = 501;
+	    // persistance de la structure de journalisation dans  le fichier 
+	    pthread_mutex_lock(&httpd_mtx);
+	    logging(logs);
+	    pthread_mutex_unlock(&httpd_mtx);
         // Return
         return NULL;
     }
 
-    // If the method name is `GET`,
-    // or the method name is `POST`.
+    // Si le nom de la method est "GET",
+    // Ou le nom de la method est "POST".
 
-    // If the method name is `POST`,
+    // Si le nom de la method est "POST",
     if (strcasecmp(method, "POST") == 0)
-        // Set the CGI mode be true
+        // Mode CGI à passe à vrai
         cgi = 1;
 
-    // Set index `i` be 0
     i = 0;
 
-    // For the remaining input buffer's each byte.
-    //     If the byte is space,
-    //     and the buffer is not run out.
+    // On avance jusqu'au prochain mot autrement dit on ignore les espaces
     while (ISspace(buf[j]) && (j < sizeof(buf)))
-        // Increment the buffer index to ignore the space
         j++;
 
-    // For the remaining buffer's each byte.
-    //     If the byte is not space,
-    //     and the url buffer is not full,
-    //     and the input buffer is not run out.
-    //         Enter loop body.
+    // On récupère le deuxième mot de la requête "l' URL"
     while (!ISspace(buf[j]) && (i < sizeof(url) - 1) && (j < sizeof(buf))) {
-        // Copy the byte to the url buffer
         url[i] = buf[j];
-
-        // Increment buffer indexes
-        i++;
+        // Incrémente les indexes 
+		i++;
         j++;
     }
 
-    // Add nul to string end
+    // ajout du caractère de fin de chaine
     url[i] = '\0';
 
-    // If the method name is `GET`
+    // Si le nom de la method est "GET",
     if (strcasecmp(method, "GET") == 0) {
         // Set the query sting be the url
         query_string = url;
 
-        // For the url's each byte.
-        //     If the byte is not `?`,
-        //     and the url is not run out.
-        //         Enter loop body.
+   		// On récupère la première partie de la requête "l' URL"
         while ((*query_string != '?') && (*query_string != '\0'))
             // Increment the query sting pointer to ignore the byte
             query_string++;
 
-        // If the byte is `?`,
+        // If the byte is "?",
         // it means the url has query string.
         if (*query_string == '?') {
             // Set the CGI mode be true
@@ -208,20 +181,20 @@ void *accept_request(void *parameters) {
         }
     }
 
-    // Add `htdocs` to the url's path as prefix.
+    // Add "htdocs" to the url's path as prefix.
     // Add the prefixed path to the path buffer.
     sprintf(path, "htdocs%s", url);
-    // If the path string ends with `/`,
+    // If the path string ends with "/",
     // it means it is a directory path.
     if (path[strlen(path) - 1] == '/')
-        // Append `index.html` to the path string
+        // Append "index.html" to the path string
         strcat(path, "index.html");
 
     // If the path not exists,
     // it means 404 error.
     if (stat(path, &st) == -1) {
         // While the last read is successful,
-        // and the buffer's first byte is not `\n`,
+        // and the buffer's first byte is not "\n",
         // it means the input data's headers part is not run out.
         while ((numchars > 0) && strcmp("\n", buf)) /* read & discard headers */
             // Read one header line
@@ -237,7 +210,7 @@ void *accept_request(void *parameters) {
     else {
         // If the path is directory path
         if (is_directory(path))
-            // Append `/index.html` to the path string
+            // Append "/index.html" to the path string
             strcat(path, "/index.html");
 
         // If the path is executable
@@ -289,7 +262,7 @@ void serve_file(int client, const char *filename, log_struct *logs) {
     buf[1] = '\0';
 
     // While the last read is successful,
-    // and the buffer's first byte is not `\n`,
+    // and the buffer's first byte is not "\n",
     // it means the input data's headers part is not run out.
     while ((numchars > 0) && strcmp("\n", buf)) /* read & discard headers */
         // Read one header line
@@ -332,7 +305,7 @@ void bad_request(int client) {
     // Send
     send(client, buf, sizeof(buf), 0);
 
-    // Add `Content-Type` header to the buffer
+    // Add "Content-Type" header to the buffer
     sprintf(buf, "Content-type: text/html\r\n");
 
     // Send
@@ -395,7 +368,7 @@ void cannot_execute(int client) {
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Content-Type` header to the buffer
+    // Add "Content-Type" header to the buffer
     sprintf(buf, "Content-type: text/html\r\n");
 
     // Send
@@ -447,7 +420,7 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
     // Child process PID
     pid_t pid;
 
-    // `waitpid`'s status
+    // "waitpid"'s status
     int status;
 
     // Loop index
@@ -462,37 +435,37 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
     // Number of bytes read
     int numchars = 1;
 
-    // `Content-Length` header's value
+    // "Content-Length" header's value
     int content_length = -1;
 
     // Set the buffer's initial value be "A\0"
     buf[0] = 'A';
     buf[1] = '\0';
 
-    // If the method name is `GET`
+    // If the method name is "GET"
     if (strcasecmp(method, "GET") == 0)
         // While the last read is successful,
-        // and the buffer's first byte is not `\n`,
+        // and the buffer's first byte is not "\n",
         // it means the input data's headers part is not run out.
         while ((numchars > 0) && strcmp("\n", buf)) /* read & discard headers */
             // Read one header line
             numchars = get_line(client, buf, sizeof(buf));
 
-    // If the method name is not `GET`,
-    // it means `POST`.
+    // If the method name is not "GET",
+    // it means "POST".
     else /* POST */
     {
         // Read one header line
         numchars = get_line(client, buf, sizeof(buf));
 
         // While the last read is successful,
-        // and the buffer's first byte is not `\n`,
+        // and the buffer's first byte is not "\n",
         // it means the input data's headers part is not run out.
         while ((numchars > 0) && strcmp("\n", buf)) {
-            // Add nul character after "Content-Length:" for the `strcasecmp` below
+            // Add nul character after "Content-Length:" for the "strcasecmp" below
             buf[15] = '\0';
 
-            // If the header key is `Content-Length`
+            // If the header key is "Content-Length"
             if (strcasecmp(buf, "Content-Length:") == 0)
                 // Get the header value
                 content_length = atoi(&(buf[16]));
@@ -588,7 +561,7 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         // Set REQUEST_METHOD environment variable
         putenv(meth_env);
 
-        // If the method name is `GET`
+        // If the method name is "GET"
         if (strcasecmp(method, "GET") == 0) {
             // Add given query string to the QUERY_STRING buffer
             sprintf(query_env, "QUERY_STRING=%s", query_string);
@@ -597,8 +570,8 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
             putenv(query_env);
         }
 
-        // If the method name is not `GET`,
-        // it means `POST`.
+        // If the method name is not "GET",
+        // it means "POST".
         else { /* POST */
             // Add content length to the CONTENT_LENGTH buffer
             sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
@@ -623,7 +596,7 @@ void execute_cgi(int client, const char *path, const char *method, const char *q
         // process to send data to the child process
         close(cgi_input[0]);
 
-        // If the method name is `POST`
+        // If the method name is "POST"
         if (strcasecmp(method, "POST") == 0)
             // For input data's body part's each byte
             for (i = 0; i < content_length; i++) {
@@ -711,7 +684,7 @@ int get_line(int sock, char *buf, int size) {
     int n;
 
     // While the buffer is not full,
-    // and the byte is not `\n`.
+    // and the byte is not "\n".
     while ((i < size - 1) && (c != '\n')) {
         // Read one byte
         n = recv(sock, &c, 1, 0);
@@ -719,28 +692,28 @@ int get_line(int sock, char *buf, int size) {
 
         // If the read is successful
         if (n > 0) {
-            // If the byte is `\r`
+            // If the byte is "\r"
             if (c == '\r') {
                 // Peek the next byte
                 n = recv(sock, &c, 1, MSG_PEEK);
                 /* DEBUG printf("%02X\n", c); */
 
                 // If the peek is successful,
-                // and the next byte is `\n`
+                // and the next byte is "\n"
                 if ((n > 0) && (c == '\n'))
                     // Read the next byte
                     recv(sock, &c, 1, 0);
 
                 // If the peek is not successful,
-                // or the next byte is not `\n`
+                // or the next byte is not "\n"
                 else
-                    // Set the byte be `\n`.
-                    // This means treat a single `\r` as `\r\n`
+                    // Set the byte be "\n".
+                    // This means treat a single "\r" as "\r\n"
                     c = '\n';
             }
 
             // Add the byte to the buffer.
-            // Notice `\r\n`, `\r` and '\n' are normalized to `\n` in the buffer.
+            // Notice "\r\n", "\r" and '\n' are normalized to "\n" in the buffer.
             buf[i] = c;
 
             // Increment buffer index
@@ -749,7 +722,7 @@ int get_line(int sock, char *buf, int size) {
 
         // If the read is not successful
         else
-            // Set the byte be `\n`
+            // Set the byte be "\n"
             c = '\n';
     }
 
@@ -782,13 +755,13 @@ void headers(int client, const char *filename) {
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Server` header to the buffer
+    // Add "Server" header to the buffer
     strcpy(buf, SERVER_STRING);
 
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Content-Type` header to the buffer
+    // Add "Content-Type" header to the buffer
     strcpy(buf, content_type);
 
     // Send
@@ -814,13 +787,13 @@ void not_found(int client) {
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Server` header to the buffer
+    // Add "Server" header to the buffer
     sprintf(buf, SERVER_STRING);
 
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Content-Type` header to the buffer
+    // Add "Content-Type" header to the buffer
     sprintf(buf, "Content-Type: text/html\r\n");
 
     // Send
@@ -956,13 +929,13 @@ void unimplemented(int client) {
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Server` header to the buffer
+    // Add "Server" header to the buffer
     sprintf(buf, SERVER_STRING);
 
     // Send
     send(client, buf, strlen(buf), 0);
 
-    // Add `Content-Type` header to the buffer
+    // Add "Content-Type" header to the buffer
     sprintf(buf, "Content-Type: text/html\r\n");
 
     // Send
@@ -1002,72 +975,69 @@ void unimplemented(int client) {
 /**********************************************************************/
 
 /**
- * Main function.
+ * Fonction main.
  */
 int main(void) {
 
-    // Port number. 0 means use random port.
+    // Numéro du port d'écoute.
     unsigned short port = 8080;
 
-    // Client address structure
+    // Structure pour l’adresse du client 
     struct sockaddr_in client_name;
 
-    // Client address structure's size
+    // Taille de la structure
     socklen_t client_name_len = sizeof(client_name);
 
-    // Thread pointer
+    // Pointer de thread
     pthread_t newthread;
 
-    // Server socket FD
+    // FD Server socket
     int server_sock;
 
-    // Serveur PID
+    // PID Serveur 
     int server_pid = getpid();
 
-    // Create server socket
+    // Crée socket serveur
     server_sock = startup(&port);
 
-    // Print message
+    // Message d'info
     printf("httpd running on port %d\n", port);
 
-    // Loop forever
+    // Boucle infini
     while (1) {
-        // thread Parameter
+        // Paramètre à passé au thread pour effectuer une Journalisation
         struct log_struct logs;
 
-        // Accept a request
+        // Accepte une requête 
         logs.client_sock = accept(server_sock, (struct sockaddr *)&client_name, &client_name_len);
 
-        // logging ip
+        // Journalisation ip
         strcpy(logs.ip, inet_ntoa(client_name.sin_addr));
 
-        // logging date
+        // Journalisation date
         time_t t1 = time(NULL);
         struct tm tm = *localtime(&t1);
         sprintf(logs.date, "%d-%d-%d %d:%d:%d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 
-        // logging serveur pid
+        // Journalisation pid serveur
         logs.serveur_pid = server_pid;
 
-        // If have error
+        // Si on à une erreur 
         if (logs.client_sock == -1)
-            // Raise error
+            // On affiche l'erreur et on quitte le programme
             error_die("accept");
 
-        // If not have error.
-
-        // Create thread.
-        // Process the request
-        // If have error.
+		// Créer un thread et traiter la requête 
+        // Si on à une erreur
         if (pthread_create(&newthread, NULL, accept_request, &logs) != 0)
-            // Raise error
+            // On affiche l'erreur et on quitte le programme
             perror("pthread_create");
 
         logs.thread_id = (int)newthread;
     }
-    // Close the server socket
+    // Ferme le socket du serveur
     close(server_sock);
 
-    // Exit without error
+    // fin sans erreur
     return (0);
 }
