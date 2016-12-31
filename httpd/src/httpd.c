@@ -199,22 +199,30 @@ void *accept_request(void *parameters) {
 
 	// Si le chemin existe
 	else {
-		// Si le chemin est un répertoire
-		if (is_directory(path))
-			// On ajoute “index.html” à la fin du chemin
-			strcat(path, "/index.html");
+		// Si la ressource est lisible
+		if (is_readable(path)){
+			// Si le chemin est un répertoire
+			if (is_directory(path))
+				// On ajoute “index.html” à la fin du chemin
+				strcat(path, "/index.html");
 
-		// Si la ressource est un exécutable
-		if (is_executable(path))
-			// On asse le mode CGI à true
-			cgi = 1;
+			// Si la ressource est un exécutable
+			if (is_executable(path))
+				// On asse le mode CGI à true
+				cgi = 1;
 
-		if (!cgi)
-			// Servir la ressource
-			serve_file(client, path, &logs);
-		else
-			// Exécuter la ressource
-			execute_cgi(client, path, method, query_string, &logs);
+			if (!cgi)
+				// Servir la ressource
+				serve_file(client, path, &logs);
+			else
+				// Exécuter la ressource
+				execute_cgi(client, path, method, query_string, &logs);
+		} else { //la ressource n'est pas lisible
+			// On renvoie la page 403
+			forbidden(client);
+			// Journalisation du code 403
+			logs.http_code = 403;
+		}
 	}
 
 	// Fermer la socket
@@ -524,6 +532,32 @@ void headers(int client, const char *filename) {
 	send(client, buf, strlen(buf), 0);
 }
 
+/**********************************************************************/
+/* Erreur 403*/
+/**********************************************************************/
+void forbidden(int client) {
+	char buf[1024];
+	sprintf(buf, "HTTP/1.1 403 FORBIDDEN\r\n");
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, SERVER_STRING);
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, "Content-Type: text/html\r\n");
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, "\r\n");
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, "<HTML><TITLE>Forbidden</TITLE>\r\n");
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, "<BODY><P>Unauthorized access</P> \r\n");
+	send(client, buf, strlen(buf), 0);
+
+	sprintf(buf, "</BODY></HTML>\r\n");
+	send(client, buf, strlen(buf), 0);
+}
 /**********************************************************************/
 /* Erreur 404*/
 /**********************************************************************/

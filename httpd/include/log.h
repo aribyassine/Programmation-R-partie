@@ -11,3 +11,5 @@ struct log_struct {
 };
 
 void logging(log_struct);
+#define LOGFILE "/tmp/http3525057.log"
+
